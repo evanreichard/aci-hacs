@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "domain": "ac_infinity",
+  "name": "AC Infinity - Bluetooth",
+  "bluetooth": [
+    {
+      "connectable": true,
+      "manufacturer_id": 2306
+    }
+  ],
+  "codeowners": ["@evanreichard"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/evanreichard/aci-hacs",
+  "issue_tracker": "https://github.com/evanreichard/aci-hacs/issues",
+  "iot_class": "local_push"
+}

@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "confirm": {
+        "title": "Confirm Setup",
+        "description": "Add {name} to Home Assistant?"
+      }
+    },
+    "abort": {
+      "not_supported": "Device not supported",
+      "invalid_data": "Device has invalid data"
+    }
+  }
+}
