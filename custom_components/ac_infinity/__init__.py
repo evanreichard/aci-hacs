@@ -8,11 +8,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .consts import DOMAIN
-from .device import ACIDevice, ACIDeviceState
+from .device import ACIDeviceState
+from .coordinator import ACICoordinator
 
 
-_LOGGER = logging.getLogger(__name__)
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.FAN]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.FAN, Platform.NUMBER]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -29,11 +29,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not ble_device:
         raise ConfigEntryNotReady(f"Could not get AC Infinity device with address {address}")
 
-    # Setup Device
-    device = ACIDevice(hass, _LOGGER, ble_device, state)
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = device
+    # Setup Coordinator
+    device_logger = logging.getLogger(f"{DOMAIN}.{entry.entry_id}")
+    coordinator = ACICoordinator(hass, ble_device, state, device_logger)
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
-    entry.async_on_unload(device.async_start())
+    entry.async_on_unload(coordinator.async_start())
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -41,8 +42,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    device: ACIDevice = hass.data[DOMAIN][entry.entry_id]
-    if entry.title != f"{device.state.id} ({device.address})":
+    coordinator: ACICoordinator = hass.data[DOMAIN][entry.entry_id]
+    if entry.title != f"{coordinator.state.id} ({coordinator.address})":
         await hass.config_entries.async_reload(entry.entry_id)
 
 

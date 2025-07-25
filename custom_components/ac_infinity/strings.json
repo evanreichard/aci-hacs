@@ -3,7 +3,7 @@
     "step": {
       "confirm": {
         "title": "Confirm Setup",
-        "description": "Add {name} to Home Assistant?"
+        "description": "Add this device to Home Assistant?"
       }
     },
     "abort": {

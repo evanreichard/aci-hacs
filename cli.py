@@ -1,93 +1,242 @@
 import asyncio
+import datetime
+import json
+import logging
 
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 from bleak import BleakScanner
+from collections.abc import Callable
+from datetime import datetime
+from logging import Handler
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.widgets import Static, Input
 
+from custom_components.ac_infinity.client import format_as_hex
 from custom_components.ac_infinity.device import ACIBluetoothDevice
 from custom_components.ac_infinity.models import DeviceMode
-from custom_components.ac_infinity.protocol import CMD_TYPE_READ, CMD_TYPE_WRITE, Command, Protocol
+from custom_components.ac_infinity.protocol import CMD_TYPE_READ, CMD_TYPE_WRITE, Command
 from custom_components.ac_infinity.state import ACIDeviceState
 
-device: ACIBluetoothDevice | None = None
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 
-def parse_advertisement_data(data: bytes) -> ACIDeviceState:
-    protocol = Protocol()
-    ad = protocol.parse_advertisement(data)
-    return ACIDeviceState.from_advertisement(ad)
+class CLI:
+    def __init__(self, log_handler: Handler, update_callback: Callable[[], None]):
+        self.device: ACIBluetoothDevice | None = None
+        self.state = ACIDeviceState()
+        self.scanner = BleakScanner(self.advertisement_callback)
+        self.seq = 0
+
+        self._log_handler = log_handler
+        self._update_callback = update_callback
+
+    async def advertisement_callback(self, ble_device: BLEDevice, advertisement: AdvertisementData):
+        # Get Manufacturer Data
+        data = advertisement.manufacturer_data.get(2306)
+        if not data:
+            return
+
+        # Update State
+        if self.device is not None:
+            if self.device.protocol.process_advertisement(data, self.state):
+                self._update_callback()
+            return
+
+        # Create Logger
+        logger = logging.getLogger(f"ac_infinity.{ble_device.address}")
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(self._log_handler)
+        logger.propagate = False
+
+        # Create Device & Initialize
+        self.device = ACIBluetoothDevice(
+            device=ble_device,
+            state=self.state,
+            logger=logger,
+            update_callback=self._update_callback,
+        )
+
+        # Update State
+        if self.device.protocol.process_advertisement(data, self.state):
+            self._update_callback()
+        await self.device.client._ensure_connected()
+
+    async def handle_command(self, command: str, cb: Callable[[str], None]):
+        if self.device is None:
+            cb("ERROR: DEVICE NOT CONNECTED")
+            return
+
+        # Parse Command & SubCommand
+        parts: list[str] = command.split(" ")
+        sub_command: str | None = None
+        if len(parts) > 1:
+            command = parts[0]
+            sub_command = " ".join(parts[1:])
+
+        def cmd_cb(data: bytes, _) -> bool:
+            cb(format_as_hex(data))
+            return False
+
+        # Handle Command
+        cmd: Command | None = None
+        if command == "info":
+            cmd = self.device.protocol.get_model_data()
+        elif command == "on":
+            cmd = self.device.protocol.set_mode(DeviceMode.ON)
+        elif command == "off":
+            cmd = self.device.protocol.set_mode(DeviceMode.OFF)
+        elif command == "speed":
+            if sub_command is not None:
+                cmd = self.device.protocol.set_on_speed(int(sub_command))
+        elif command == "mode":
+            if sub_command is not None:
+                cmd = self.device.protocol.set_mode(DeviceMode(int(sub_command)))
+        elif command in ["write", "read"]:
+            cmd_type = CMD_TYPE_WRITE if command == "write" else CMD_TYPE_READ
+            if sub_command is not None:
+                raw_cmd = [int(i.strip()) for i in sub_command.split(",")]
+                cmd = Command(cmd_type, raw_cmd)
+
+        if cmd is not None:
+            await self.device._send_command(cmd.with_callback(cmd_cb))
+        else:
+            cb("ERROR: NOT A VALID COMMAND")
 
 
-async def advertisement_callback(ble_device: BLEDevice, advertisement: AdvertisementData):
-    global device
+class CommandEntry(Static):
+    def __init__(self, command: str, result: str):
+        self.command = command
+        self.timestamp = datetime.now().replace(microsecond=0).isoformat()
+        self.result = result
+        content = f"[{self.timestamp}] $ {self.command}\n\n{self.result}"
+        super().__init__(content, classes="command-entry")
 
-    data = advertisement.manufacturer_data.get(2306)
-    if not data:
-        return
-
-    if device is not None:
-        return
-
-    state = parse_advertisement_data(data)
-    device = ACIBluetoothDevice(ble_device, state, lambda: None)
-    await device.client._ensure_connected()
-
-
-def print_data(data: bytes):
-    hex_data = data.hex()
-    hex_spaced = ' '.join(hex_data[i:i+2]for i in range(0, len(hex_data), 2))
-    print("\tIDX: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50")
-    print(f"\tHEX: {hex_spaced}\n")
+    def update_result(self, result: str):
+        self.result = result
+        content = f"[{self.timestamp}] $ {self.command}\n\n{self.result}"
+        self.update(content)
 
 
-async def handle_command(command: str):
-    global seq
-    if device is None:
-        return
+class ACInfinityCLI(App):
+    CSS = """
+    #logs {
+        width: 100%;
+        height: 40%;
+        border: solid white;
+    }
 
-    parts: list[str] = command.split(" ")
-    sub_command: str | None = None
-    if len(parts) > 1:
-        command = parts[0]
-        sub_command = " ".join(parts[1:])
+    #state {
+        width: 30%;
+        height: 100%;
+        border: solid white;
+    }
 
-    if command == "info":
-        cmd = device.protocol.get_model_data()
-        await device._send_command(cmd)
-    elif command == "on":
-        await device.turn_on(None)
-    elif command == "off":
-        await device.turn_off()
-    elif command == "speed":
-        if sub_command is not None:
-            await device.set_speed(int(sub_command))
-    elif command == "mode":
-        if sub_command is not None:
-            await device.set_mode(DeviceMode(int(sub_command)))
-    elif command in ["write", "read"]:
-        cmd_type = CMD_TYPE_WRITE if command == "write" else CMD_TYPE_READ
-        if sub_command is not None:
-            raw_cmd = [int(i.strip()) for i in sub_command.split(",")]
-            cmd = Command(cmd_type, raw_cmd, raw_resp)
-            await device._send_command(cmd)
+    #command_history {
+        width: 70%;
+        border: solid white;
+    }
 
-    print(device.state)
+    #command_input {
+        width: 100%;
+        height: 3;
+        border: solid white;
+    }
+
+    .command-entry {
+        width: 100%;
+        height: auto;
+        margin-bottom: 1;
+        border: solid $primary 50%;
+    }
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        log_handler = TextualLogHandler(self)
+        self.cli = CLI(log_handler, self.on_state_update)
+        self.command_history: list[CommandEntry] = []
+        self.log_entries: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            with ScrollableContainer(id="logs"):
+                yield Static("", id="logs-content")
+            with Horizontal():
+                with ScrollableContainer(id="command_history"):
+                    for cmd in self.command_history:
+                        yield cmd
+                yield Static(id="state")
+            yield Input(placeholder="Enter Command", id="command_input")
+
+    def on_mount(self):
+        self.logs_container = self.query_one("#logs", ScrollableContainer)
+        self.logs_content = self.query_one("#logs-content", Static)
+        self.state_widget = self.query_one("#state", Static)
+        self.history_container = self.query_one("#command_history", ScrollableContainer)
+        self.command_widget = self.query_one("#command_input", Input)
+        self.command_widget.focus()
+
+    def on_state_update(self):
+        self.state_widget.update(json.dumps(self.cli.state.to_dict(), indent=2))
+
+    def on_log_message(self, msg: str):
+        timestamp = datetime.now().replace(microsecond=0).isoformat()
+        self.log_entries.append(f"[{timestamp}] {msg}")
+        self.logs_content.update("\n".join(self.log_entries))
+        self.logs_container.scroll_end(animate=False)
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        command = event.value.strip()
+        if not command:
+            return
+
+        # Set Loading Message
+        cmd_entry = CommandEntry(command, "--- LOADING ---")
+        self.command_history.append(cmd_entry)
+        self.history_container.mount(cmd_entry)
+        self.history_container.scroll_end(animate=False)
+
+        # Define Callback
+        def cmd_cb(result: str):
+            cmd_entry.update_result(result)
+            self.history_container.scroll_end(animate=False)
+            self.command_widget.focus()
+
+        # Send Command
+        self.command_widget.value = ""
+        asyncio.create_task(self.cli.handle_command(command, cmd_cb))
 
 
-def raw_resp(data: bytes, _) -> bool:
-    print_data(data)
-    return False
+class TextualLogHandler(Handler):
+    def __init__(self, ui_app: ACInfinityCLI):
+        super().__init__()
+        self.ui_app = ui_app
+
+    def emit(self, record):
+        log_message = self.format(record)
+        self.ui_app.on_log_message(log_message)
 
 
-async def run_scanner():
-    scanner = BleakScanner(advertisement_callback)
-    await scanner.start()
+async def run_cli():
+    # Start BLE Scanner
+    ui = ACInfinityCLI()
+    await ui.cli.scanner.start()
 
+    # Start Textual
+    ui_task = asyncio.create_task(ui.run_async())
     try:
-        while True:
-            command = await asyncio.to_thread(input)
-            await handle_command(command)
+        await ui_task
     except KeyboardInterrupt:
-        await scanner.stop()
+        await ui.cli.scanner.stop()
+        ui_task.cancel()
 
-asyncio.run(run_scanner())
+if __name__ == "__main__":
+    asyncio.run(run_cli())

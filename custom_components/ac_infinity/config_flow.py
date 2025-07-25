@@ -11,7 +11,7 @@ from .protocol import Protocol
 from .state import ACIDeviceState
 
 
-_LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ACIConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -20,6 +20,7 @@ class ACIConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._address: str | None = None
+        self._state: ACIDeviceState = ACIDeviceState()
 
     async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak) -> ConfigFlowResult:
         # Ensure Unique ID & Set Address
@@ -30,60 +31,36 @@ class ACIConfigFlow(ConfigFlow, domain=DOMAIN):
         # Validate & Parse Advertisement Data
         data = discovery_info.advertisement.manufacturer_data.get(MANUFACTURER_ID)
         if data is None:
-            _LOGGER.debug("No manufacturer data for %s", self._address)
+            logger.debug("No manufacturer data for %s", self._address)
             return self.async_abort(reason="invalid_manufacturer")
-        try:
-            device_state = parse_advertisement_data(data)
-        except DeviceNotSupported as e:
-            _LOGGER.debug("Device not supported for %s: %s", self._address, e)
+
+        # Parse Advertisement Data
+        proto = Protocol()
+        if not proto.process_advertisement(data, self._state):
+            logger.debug("device not supported for %s", self._address)
             return self.async_abort(reason="not_supported")
-        except Exception as e:
-            _LOGGER.debug("Parse failed for %s: %s", self._address, e)
+
+        # Validate Data
+        if self._state.name is None or self._state.id is None:
             return self.async_abort(reason="invalid_data")
 
         # Set Title Placeholders
-        self.context["title_placeholders"] = {"name": device_state.name}
-        return self.async_show_form(
-            step_id="confirm",
-            description_placeholders={"name": device_state.name},
-        )
+        self.context["title_placeholders"] = {"name": self._state.name}
+        return self.async_show_form(step_id="confirm")
 
     async def async_step_confirm(self, user_input=None):
+        # Validate Input & Data
         if user_input is None:
             return self.async_show_form(step_id="confirm")
         if self._address is None:
             return self.async_abort(reason="invalid_data")
         self._abort_if_unique_id_configured()
 
-        # Get Service Info
-        service_info = bluetooth.async_last_service_info(
-            self.hass, self._address.upper(), connectable=True)
-        if service_info is None:
-            return self.async_show_form(step_id="confirm", errors={"base": "not_found"})
-
-        # Validate & Parse Service Data
-        data = service_info.advertisement.manufacturer_data.get(MANUFACTURER_ID)
-        if data is None:
-            return self.async_show_form(step_id="confirm", errors={"base": "invalid_manufacturer"})
-        try:
-            device_state = parse_advertisement_data(data)
-        except DeviceNotSupported as e:
-            _LOGGER.debug("Device not supported for %s: %s", self._address, e)
-            return self.async_show_form(step_id="confirm", errors={"base": "not_supported"})
-        except Exception as e:
-            _LOGGER.debug("Parse failed for %s: %s", self._address, e)
-            return self.async_show_form(step_id="confirm", errors={"base": "invalid_data"})
-
+        # Create Entry
         return self.async_create_entry(
-            title=f"{device_state.id} ({service_info.address})",
+            title=f"{self._state.id} ({self._address})",
             data={
-                CONF_ADDRESS: service_info.address,
-                CONF_SERVICE_DATA: device_state,
+                CONF_ADDRESS: self._address,
+                CONF_SERVICE_DATA: self._state,
             }
         )
-
-
-def parse_advertisement_data(data: bytes) -> ACIDeviceState:
-    protocol = Protocol()
-    ad = protocol.parse_advertisement(data)
-    return ACIDeviceState.from_advertisement(ad)

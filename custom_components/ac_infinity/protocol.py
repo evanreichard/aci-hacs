@@ -1,10 +1,10 @@
-import json
-
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from logging import Logger
+import logging
 from typing import Callable
 
 from .state import ACIDeviceState
-from .models import DeviceMode, DeviceNotSupported, DeviceType, ParsedAdvertisement, ParsedStatus, RampStatus
+from .models import DeviceMode, DeviceType, RampStatus
 
 
 PACKET_HEAD = bytes([165, 0])
@@ -16,38 +16,50 @@ CMD_TYPE_WRITE = 3
 class Command:
     type: int
     command: list[int]
-    callback: Callable[[bytes, ACIDeviceState], bool] | None
+    _callbacks: list[
+        Callable[[bytes, ACIDeviceState], bool]
+    ] = field(default_factory=list, init=False)
 
     def compile(self, seq: int) -> bytes:
         return build_command(bytes(self.command), self.type, seq)
 
+    def add(self, cmd: "Command"):
+        self.command.extend(cmd.command)
+        self._callbacks.extend(cmd._callbacks)
+
+    def with_callback(self, callback: Callable[[bytes, ACIDeviceState], bool]) -> "Command":
+        self._callbacks.append(callback)
+        return self
+
+    def has_callbacks(self) -> bool:
+        return len(self._callbacks) > 0
+
     def handle_response(self, data: bytes, state: ACIDeviceState) -> bool:
-        if self.callback is not None:
-            return self.callback(data, state)
-        return False
+        did_update = False
+        for cb in self._callbacks:
+            did_update |= cb(data, state)
+        return did_update
 
 
 class Protocol:
-    def set_mode(self, mode: DeviceMode) -> Command:
-        return Command(CMD_TYPE_WRITE, [16, 1, mode.value], self._parse_ack)
+    def __init__(self, logger: Logger | None = None):
+        self.logger = logger or logging.getLogger(__name__)
 
-    def set_speed(self, speed: int) -> Command:
-        if speed == 0:
-            return Command(CMD_TYPE_WRITE, [16, 1, 1, 17, 1, speed], self._parse_ack)
-        return Command(CMD_TYPE_WRITE, [16, 1, 2, 18, 1, speed], self._parse_ack)
+    def set_mode(self, mode: DeviceMode) -> Command:
+        return Command(CMD_TYPE_WRITE, [16, 1, mode.value])
+
+    def set_on_speed(self, speed: int) -> Command:
+        return Command(CMD_TYPE_WRITE, [18, 1, speed])
+
+    def set_off_speed(self, speed: int) -> Command:
+        return Command(CMD_TYPE_WRITE, [17, 1, speed])
 
     def get_model_data(self):
-        return Command(CMD_TYPE_READ, [16, 17, 18, 19, 20, 21, 22, 23], self._parse_model_data)
+        return Command(CMD_TYPE_READ, [16, 17, 18, 19, 20, 21, 22, 23]).with_callback(self.process_model_data)
 
-    def _parse_ack(self, data: bytes, state: ACIDeviceState) -> bool:
-        # Do we need this?
-        print("ACK:")
-        print_data(data)
-        return False
-
-    def _parse_model_data(self, data: bytes, state: ACIDeviceState) -> bool:
+    def process_model_data(self, data: bytes, state: ACIDeviceState) -> bool:
         """
-        IDX: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 55
+        IDX: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53
         HEX: A5 13 00 2A 00 03 37 D5 00 01 10 01 01 11 01 02 12 01 08 13 07 00 09 74 86 0C 79 8C 14 04 00 00 01 2C 15 04 00 00 01 2C 16 08 00 00 01 2C 00 00 01 2C 17 00 C7 6D
                                                   │       ├┘       ├┘       ├┘    ├┘    ├┘                   └─┬─┘             └─┬─┘             └─┬─┘       └─┬─┘
                 ┌─────────────────────────────────┤  ┌────┴────┐   │ ┌──────┴──┐  │ ┌───┴────┐           ┌─────┴─────┐     ┌─────┴──────┐     ┌────┴───┐  ┌────┴────┐
@@ -57,12 +69,14 @@ class Protocol:
                 │        6 = cycle on or off      │   │Speed On│     └─────────┘  │Auto High│
                 └─────────────────────────────────┘   └────────┘                  └─────────┘
         """
-        print_data(data)
+        if len(data) != 54:
+            self.logger.warning("invalid data length for model data: %s", len(data))
+            return False
 
         # Device Mode (Byte 12)
         try:
             state.mode = DeviceMode(data[12])
-        except ValueError:
+        except:
             pass
 
         # Update State
@@ -75,9 +89,10 @@ class Protocol:
         state.fan_speed_off = data[15]
         state.fan_speed_on = data[18]
 
+        self.logger.debug("updated state via model info")
         return True
 
-    def parse_advertisement(self, data: bytes) -> ParsedAdvertisement:
+    def process_advertisement(self, data: bytes, state: ACIDeviceState) -> bool:
         """
         IDX: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26
         HEX: A4 C1 38 5F 42 9B 53 34 30 42 4D 03 06 00 05 CD 00 00 04 00 00 00 00 00 00 00 00
@@ -88,13 +103,15 @@ class Protocol:
                  └─────────────────┘               └──────────────┘ └─────────┘
         """
         if len(data) != 27:
-            raise ValueError(f"Invalid advertisement data length: {len(data)}")
+            self.logger.warning("invalid data length for advertisement data: %s", len(data))
+            return False
 
         # Device Type (Byte 12)
         try:
             device = DeviceType(data[12])
         except ValueError:
-            raise DeviceNotSupported(data[12])
+            self.logger.warning("device not supported: %d", data[12])
+            return False
 
         device_id = "{}-{}".format(device.prefix, data[6:11].decode('ascii'))
         device_name = "{} ({})".format(device, device_id)
@@ -106,15 +123,17 @@ class Protocol:
         # Fan Speed (Byte 18 Lower Nibble)
         fan_speed = data[18] & 0x0F
 
-        return ParsedAdvertisement(
-            id=device_id,
-            name=device_name,
-            model=device.model,
-            fan_speed=fan_speed,
-            temperature=temperature,
-        )
+        # Update State
+        state.id = device_id
+        state.name = device_name
+        state.model = device.model
+        state.fan_speed = fan_speed
+        state.temperature = temperature
 
-    def parse_status(self, data: bytes) -> ParsedStatus:
+        self.logger.debug("updated state via advertisement")
+        return True
+
+    def process_status(self, data: bytes, state: ACIDeviceState) -> bool:
         """
         IDX: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17
         HEX: 1E FF 02 09 03 0C 00 00 07 E4 00 00 00 00 27 10 00 32
@@ -129,33 +148,30 @@ class Protocol:
                                               └─────────────────────────────────┘
         """
         if len(data) != 18:
-            raise ValueError(f"Invalid characteristic data length: {len(data)}")
+            self.logger.warning("invalid data length for status data: %s", data)
+            return False
 
         # Temperature (Bytes 8-9, Big Endian)
         temp_raw = int.from_bytes(data[8:10], 'big')
-        temperature = temp_raw / 100.0  # 07E4 = 2020 = 20.20°C
+        state.temperature = temp_raw / 100.0  # 07E4 = 2020 = 20.20°C
 
         # Fan Speed (Byte 14 Upper Nibble)
-        fan_speed = data[17] >> 4
+        state.fan_speed = data[17] >> 4
 
         # Ramp Status (Byte 16 Upper Nibble)
         try:
-            ramp_status = RampStatus(data[16] >> 4)
+            state.ramp_status = RampStatus(data[16] >> 4)
         except ValueError:
-            ramp_status = RampStatus.NONE
+            state.ramp_status = RampStatus.NONE
 
         # Device Mode (Byte 17 Lower Nibble)
         try:
-            device_mode = DeviceMode(data[17] & 0x0F)
+            state.mode = DeviceMode(data[17] & 0x0F)
         except ValueError:
-            device_mode = DeviceMode.OFF
+            state.mode = DeviceMode.OFF
 
-        return ParsedStatus(
-            temperature=temperature,
-            fan_speed=fan_speed,
-            ramp_status=ramp_status,
-            mode=device_mode,
-        )
+        self.logger.debug("updated state via status")
+        return True
 
 
 def build_command(payload: bytes, command_type: int, seq: int):
@@ -185,10 +201,3 @@ def crc16(d, i, n):
 def add_int16(d, i, j):
     d[i] = (j >> 8) & 0xff
     d[i+1] = j & 0xff
-
-
-def print_data(data: bytes):
-    hex_data = data.hex()
-    hex_spaced = ' '.join(hex_data[i:i+2]for i in range(0, len(hex_data), 2))
-    print("\tIDX: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55")
-    print(f"\tHEX: {hex_spaced}\n")
