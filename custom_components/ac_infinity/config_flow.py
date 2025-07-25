@@ -1,12 +1,10 @@
 import logging
 
-from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS, CONF_SERVICE_DATA
 
 from .consts import DOMAIN, MANUFACTURER_ID
-from .models import DeviceNotSupported
 from .protocol import Protocol
 from .state import ACIDeviceState
 

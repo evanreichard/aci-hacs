@@ -65,7 +65,9 @@ class ACIFan(ACIEntity, FanEntity):
     def _async_update_attrs(self) -> None:
         state = self.coordinator.state
         self._attr_is_on = state.mode != DeviceMode.OFF
-        self._attr_percentage = ranged_value_to_percentage(SPEED_RANGE, state.fan_speed_on)
+
+        if state.fan_speed:
+            self._attr_percentage = ranged_value_to_percentage(SPEED_RANGE, state.fan_speed)
 
         valid_modes = [mode for mode in DeviceMode if mode not in [DeviceMode.OFF, DeviceMode.ON]]
         self._attr_preset_modes = [mode.id_string for mode in valid_modes]
