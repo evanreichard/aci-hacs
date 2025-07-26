@@ -3,7 +3,7 @@ from logging import Logger
 import logging
 from typing import Callable
 
-from .state import ACIDeviceState
+from .state import ACIDeviceState, AutoState
 from .models import DeviceMode, DeviceType, RampStatus
 
 
@@ -53,6 +53,10 @@ class Protocol:
 
     def set_off_speed(self, speed: int) -> Command:
         return Command(CMD_TYPE_WRITE, [17, 1, speed])
+
+    def set_auto(self, state: AutoState) -> Command:
+        auto_on_state = (state.low_temp_on << 2) | (state.high_temp_on << 3)
+        return Command(CMD_TYPE_WRITE, [19, 7, auto_on_state, state.high_temp, state.high_temp, state.low_temp, state.low_temp])
 
     def get_model_data(self):
         return Command(CMD_TYPE_READ, [16, 17, 18, 19, 20, 21, 22, 23]).with_callback(self.process_model_data)
@@ -148,7 +152,7 @@ class Protocol:
                                               └─────────────────────────────────┘
         """
         if len(data) != 18:
-            self.logger.warning("invalid data length for status data: %s", data)
+            self.logger.warning("invalid data length for status data: %s", len(data))
             return False
 
         # Temperature (Bytes 8-9, Big Endian)

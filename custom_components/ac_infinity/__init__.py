@@ -12,7 +12,7 @@ from .device import ACIDeviceState
 from .coordinator import ACICoordinator
 
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.FAN, Platform.NUMBER]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.FAN, Platform.NUMBER, Platform.SWITCH]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -33,6 +33,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_logger = logging.getLogger(f"{DOMAIN}.{entry.entry_id}")
     coordinator = ACICoordinator(hass, ble_device, state, device_logger)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
+    # Get Initial Data
+    try:
+        await coordinator.bt.update_model_data()
+    except:
+        raise ConfigEntryNotReady(f"Could not get AC Infinity device data with address {address}")
 
     entry.async_on_unload(coordinator.async_start())
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

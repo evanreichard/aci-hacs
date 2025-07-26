@@ -60,7 +60,7 @@ class CLI:
             device=ble_device,
             state=self.state,
             logger=logger,
-            update_callback=self._update_callback,
+            on_state_change=self._update_callback,
         )
 
         # Update State
@@ -90,6 +90,7 @@ class CLI:
             cmd = self.device.protocol.get_model_data()
         elif command == "on":
             cmd = self.device.protocol.set_mode(DeviceMode.ON)
+            cmd.add(self.device.protocol.set_on_speed(8))
         elif command == "off":
             cmd = self.device.protocol.set_mode(DeviceMode.OFF)
         elif command == "speed":

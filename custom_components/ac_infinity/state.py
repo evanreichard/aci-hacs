@@ -1,5 +1,13 @@
 from dataclasses import dataclass
-from .models import DeviceMode, ParsedAdvertisement, ParsedStatus, RampStatus
+from .models import DeviceMode, RampStatus
+
+
+@dataclass
+class AutoState():
+    high_temp_on: bool
+    low_temp_on: bool
+    high_temp: int
+    low_temp: int
 
 
 @dataclass
@@ -24,6 +32,17 @@ class ACIDeviceState:
     auto_low_temp_on: bool | None = None
     cycle_off_time: int | None = None
     cycle_on_time: int | None = None
+
+    def get_auto_state(self) -> AutoState | None:
+        if (self.auto_high_temp is None or self.auto_high_temp_on is None or
+                self.auto_low_temp is None or self.auto_low_temp_on is None):
+            return None
+        return AutoState(
+            high_temp_on=self.auto_high_temp_on,
+            low_temp_on=self.auto_low_temp_on,
+            high_temp=self.auto_high_temp,
+            low_temp=self.auto_low_temp
+        )
 
     def to_dict(self) -> dict:
         result = {}

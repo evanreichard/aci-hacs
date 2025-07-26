@@ -25,7 +25,7 @@ class TemperatureSensor(ACIEntity, SensorEntity):
 
     def __init__(self, coordinator: ACICoordinator):
         super().__init__(coordinator)
-        self._attr_name = f"{self.coordinator.state.id} Temperature"
+        self._attr_name = f"Temperature"
         self._attr_unique_id = f"{self.coordinator.state.id}_temperature"
 
     @property

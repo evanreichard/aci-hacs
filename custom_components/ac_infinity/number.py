@@ -1,6 +1,6 @@
 from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -28,6 +28,7 @@ async def async_setup_entry(
 class AutoHighTemperature(ACIEntity, NumberEntity):
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = NumberDeviceClass.TEMPERATURE
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
     _attr_native_max_value = 50
@@ -35,10 +36,10 @@ class AutoHighTemperature(ACIEntity, NumberEntity):
     def __init__(self, coordinator: ACICoordinator):
         super().__init__(coordinator)
         self._attr_name = "Auto High Temp"
-        self._attr_unique_id = f"{self.coordinator.state.id}_high_temperature"
+        self._attr_unique_id = f"{self.coordinator.state.id}_auto_high_temp"
 
     async def async_set_native_value(self, value: float) -> None:
-        pass
+        await self.coordinator.bt.set_auto_high_temp(int(value))
 
     @property
     def available(self) -> bool:  # type: ignore
@@ -52,6 +53,7 @@ class AutoHighTemperature(ACIEntity, NumberEntity):
 class AutoLowTemperature(ACIEntity, NumberEntity):
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_device_class = NumberDeviceClass.TEMPERATURE
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
     _attr_native_max_value = 50
@@ -59,10 +61,10 @@ class AutoLowTemperature(ACIEntity, NumberEntity):
     def __init__(self, coordinator: ACICoordinator):
         super().__init__(coordinator)
         self._attr_name = "Auto Low Temp"
-        self._attr_unique_id = f"{self.coordinator.state.id}_low_temperature"
+        self._attr_unique_id = f"{self.coordinator.state.id}_auto_low_temp"
 
     async def async_set_native_value(self, value: float) -> None:
-        pass
+        await self.coordinator.bt.set_auto_low_temp(int(value))
 
     @property
     def available(self) -> bool:  # type: ignore
@@ -76,6 +78,7 @@ class AutoLowTemperature(ACIEntity, NumberEntity):
 class CycleOffTime(ACIEntity, NumberEntity):
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_device_class = NumberDeviceClass.DURATION
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
     _attr_native_max_value = 1000  # Max 2 Bytes in Seconds
@@ -101,6 +104,7 @@ class CycleOffTime(ACIEntity, NumberEntity):
 class CycleOnTime(ACIEntity, NumberEntity):
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_device_class = NumberDeviceClass.DURATION
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
     _attr_native_max_value = 1000  # Max 2 Bytes in Seconds
@@ -124,6 +128,7 @@ class CycleOnTime(ACIEntity, NumberEntity):
 
 
 class OnSpeed(ACIEntity, NumberEntity):
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 0
     _attr_native_max_value = 10
     _attr_native_step = 1
@@ -146,6 +151,7 @@ class OnSpeed(ACIEntity, NumberEntity):
 
 
 class OffSpeed(ACIEntity, NumberEntity):
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 0
     _attr_native_max_value = 10
     _attr_native_step = 1

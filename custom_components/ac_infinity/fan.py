@@ -44,10 +44,13 @@ class ACIFan(ACIEntity, FanEntity):
         return self.coordinator.available
 
     async def async_set_percentage(self, percentage: int) -> None:
-        speed = 0
-        if percentage > 0:
-            speed = math.ceil(percentage_to_ranged_value(SPEED_RANGE, percentage))
-        await self.coordinator.bt.set_on_speed(speed)
+        speed = math.ceil(percentage_to_ranged_value(SPEED_RANGE, percentage))
+        if speed == 0 and self.coordinator.state.mode == DeviceMode.ON:
+            await self.coordinator.bt.turn_off()
+        elif speed > 0 and self.coordinator.state.mode == DeviceMode.OFF:
+            await self.coordinator.bt.turn_on(speed)
+        else:
+            await self.coordinator.bt.set_on_speed(speed)
 
     async def async_turn_on(self, percentage: int | None = None, preset_mode: str | None = None, **kwargs: Any) -> None:
         speed = None
@@ -66,9 +69,9 @@ class ACIFan(ACIEntity, FanEntity):
         state = self.coordinator.state
         self._attr_is_on = state.mode != DeviceMode.OFF
 
-        if state.fan_speed:
+        if state.fan_speed is not None:
             self._attr_percentage = ranged_value_to_percentage(SPEED_RANGE, state.fan_speed)
 
-        valid_modes = [mode for mode in DeviceMode if mode not in [DeviceMode.OFF, DeviceMode.ON]]
+        valid_modes = [mode for mode in DeviceMode if mode not in [DeviceMode.OFF]]
         self._attr_preset_modes = [mode.id_string for mode in valid_modes]
         self._attr_preset_mode = str(state.mode) if state.mode in valid_modes else None

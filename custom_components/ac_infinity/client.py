@@ -5,7 +5,7 @@ from typing import Callable
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from bleak.backends.device import BLEDevice
 
-from .protocol import Command
+from .protocol import Command, Protocol
 
 DISCONNECT_TIMEOUT = 30
 RESPONSE_TIMEOUT = 5
@@ -13,8 +13,8 @@ RESPONSE_TIMEOUT = 5
 WRITE_CHAR = "70d51001-2c7f-4e75-ae8a-d758951ce4e0"
 READ_NOTIFY_CHAR = "70d51002-2c7f-4e75-ae8a-d758951ce4e0"
 
-WRITE_RESPONSE_HEADER = bytes([0xA5, 0x13, 0x00])  # LEN: 14
-NOTIFY_STATUS_HEADER = bytes([0x1E, 0xFF, 0x02])  # LEN: 18
+WRITE_RESPONSE_HEADER = bytes([0xA5, 0x13, 0x00])
+NOTIFY_STATUS_HEADER = bytes([0x1E, 0xFF, 0x02])
 
 
 class Client:

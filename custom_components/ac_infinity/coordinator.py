@@ -24,7 +24,7 @@ class ACICoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.bt = ACIBluetoothDevice(
             device=device,
             state=state,
-            update_callback=self.async_update_listeners,
+            on_state_change=self.async_update_listeners,
             logger=logger,
         )
 
@@ -33,10 +33,16 @@ class ACICoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             logger=logger,
             address=device.address,
             needs_poll_method=self._needs_poll,
-            poll_method=self.bt._do_poll,
+            poll_method=self._do_poll,
             mode=bluetooth.BluetoothScanningMode.ACTIVE,
             connectable=True,
         )
+
+    async def _do_poll(self, _) -> None:
+        try:
+            await self.bt.update_model_data()
+        except Exception as e:
+            self.logger.error("failed to update model data: %s", e)
 
     @callback
     def _needs_poll(
@@ -61,7 +67,7 @@ class ACICoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     ) -> None:
         data = service_info.advertisement.manufacturer_data.get(MANUFACTURER_ID)
         if data is None:
-            self.logger.warning("No manufacturer data for %s", self.address)
+            self.logger.warning("no manufacturer data for %s", self.address)
         else:
             self.bt._update_from_advertisement_data(data)
         super()._async_handle_bluetooth_event(service_info, change)
