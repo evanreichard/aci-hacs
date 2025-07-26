@@ -7,7 +7,7 @@ from typing import Callable
 from .client import Client
 from .models import DeviceMode
 from .protocol import Command, Protocol
-from .state import ACIDeviceState, AutoState
+from .state import ACIDeviceState, AutoState, CycleState
 
 
 class ACIBluetoothDevice:
@@ -42,29 +42,49 @@ class ACIBluetoothDevice:
     async def turn_off(self):
         await self.set_mode(DeviceMode.OFF)
 
+    async def set_timer_to_off(self, time: int):
+        await self._send_command_and_update(self.protocol.set_timer_to_off(time))
+
+    async def set_timer_to_on(self, time: int):
+        await self._send_command_and_update(self.protocol.set_timer_to_on(time))
+
+    async def set_cycle_on_time(self, time: int):
+        cycle_state = await self._get_cycle_state()
+        if cycle_state is None:
+            return
+        cycle_state.cycle_on_time = time
+        await self._send_command_and_update(self.protocol.set_cycle(cycle_state))
+
+    async def set_cycle_off_time(self, time: int):
+        cycle_state = await self._get_cycle_state()
+        if cycle_state is None:
+            return
+        cycle_state.cycle_off_time = time
+        await self._send_command_and_update(self.protocol.set_cycle(cycle_state))
+
     async def set_auto_high_temp(self, temp: int):
-        auto_state = self.state.get_auto_state()
+        auto_state = await self._get_auto_state()
         if auto_state is None:
             return
         auto_state.high_temp = temp
         await self._send_command_and_update(self.protocol.set_auto(auto_state))
 
     async def set_auto_low_temp(self, temp: int):
-        auto_state = self.state.get_auto_state()
+        auto_state = await self._get_auto_state()
         if auto_state is None:
             return
         auto_state.low_temp = temp
         await self._send_command_and_update(self.protocol.set_auto(auto_state))
 
     async def set_auto_low_switch(self, on: bool):
-        auto_state = self.state.get_auto_state()
+        auto_state = await self._get_auto_state()
         if auto_state is None:
             return
         auto_state.low_temp_on = on
         await self._send_command_and_update(self.protocol.set_auto(auto_state))
 
     async def set_auto_high_switch(self, on: bool):
-        auto_state = self.state.get_auto_state()
+        auto_state = await self._get_auto_state()
         if auto_state is None:
             return
         auto_state.high_temp_on = on
@@ -77,6 +97,14 @@ class ACIBluetoothDevice:
             await self.update_model_data()
         if auto_state := self.state.get_auto_state():
             return auto_state
+
+    async def _get_cycle_state(self) -> CycleState | None:
+        if cycle_state := self.state.get_cycle_state():
+            return cycle_state
+        else:
+            await self.update_model_data()
+        if cycle_state := self.state.get_cycle_state():
+            return cycle_state
 
     async def update_model_data(self):
         await self._send_command(self.protocol.get_model_data())

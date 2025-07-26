@@ -1,9 +1,11 @@
+import logging
+import struct
+
 from dataclasses import dataclass, field
 from logging import Logger
-import logging
 from typing import Callable
 
-from .state import ACIDeviceState, AutoState
+from .state import ACIDeviceState, AutoState, CycleState
 from .models import DeviceMode, DeviceType, RampStatus
 
 
@@ -57,6 +59,19 @@ class Protocol:
     def set_auto(self, state: AutoState) -> Command:
         auto_on_state = (state.low_temp_on << 2) | (state.high_temp_on << 3)
         return Command(CMD_TYPE_WRITE, [19, 7, auto_on_state, state.high_temp, state.high_temp, state.low_temp, state.low_temp])
+
+    def set_cycle(self, state: CycleState) -> Command:
+        cycle_on_bytes = list(struct.pack('>I', state.cycle_on_time))
+        cycle_off_bytes = list(struct.pack('>I', state.cycle_off_time))
+        return Command(CMD_TYPE_WRITE, [22, 8, *cycle_on_bytes, *cycle_off_bytes])
+
+    def set_timer_to_on(self, timer_on: int):
+        timer_on_bytes = list(struct.pack('>I', timer_on))
+        return Command(CMD_TYPE_WRITE, [20, 4, *timer_on_bytes])
+
+    def set_timer_to_off(self, timer_off: int):
+        timer_off_bytes = list(struct.pack('>I', timer_off))
+        return Command(CMD_TYPE_WRITE, [21, 4, *timer_off_bytes])
 
     def get_model_data(self):
         return Command(CMD_TYPE_READ, [16, 17, 18, 19, 20, 21, 22, 23]).with_callback(self.process_model_data)

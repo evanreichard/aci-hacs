@@ -89,7 +89,7 @@ class CycleOffTime(ACIEntity, NumberEntity):
         self._attr_unique_id = f"{self.coordinator.state.id}_cycle_off_time"
 
     async def async_set_native_value(self, value: float) -> None:
-        pass
+        await self.coordinator.bt.set_cycle_off_time(int(value * 60))
 
     @property
     def available(self) -> bool:  # type: ignore
@@ -115,7 +115,7 @@ class CycleOnTime(ACIEntity, NumberEntity):
         self._attr_unique_id = f"{self.coordinator.state.id}_cycle_on_time"
 
     async def async_set_native_value(self, value: float) -> None:
-        pass
+        await self.coordinator.bt.set_cycle_on_time(int(value * 60))
 
     @property
     def available(self) -> bool:  # type: ignore

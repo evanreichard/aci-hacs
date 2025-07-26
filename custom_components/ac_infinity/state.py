@@ -11,6 +11,12 @@ class AutoState():
 
 
 @dataclass
+class CycleState():
+    cycle_on_time: int
+    cycle_off_time: int
+
+
+@dataclass
 class ACIDeviceState:
     # Core Identity (Advertisement Only)
     id: str | None = None
@@ -32,6 +38,11 @@ class ACIDeviceState:
     auto_low_temp_on: bool | None = None
     cycle_off_time: int | None = None
     cycle_on_time: int | None = None
+
+    def get_cycle_state(self) -> CycleState | None:
+        if self.cycle_off_time is None or self.cycle_on_time is None:
+            return None
+        return CycleState(self.cycle_on_time, self.cycle_off_time)
 
     def get_auto_state(self) -> AutoState | None:
         if (self.auto_high_temp is None or self.auto_high_temp_on is None or
