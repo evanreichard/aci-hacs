@@ -107,6 +107,8 @@ class Protocol:
         state.cycle_on_time = int.from_bytes(data[44:46])
         state.fan_speed_off = data[15]
         state.fan_speed_on = data[18]
+        state.timer_to_off_time = int.from_bytes(data[38:40])
+        state.timer_to_on_time = int.from_bytes(data[32:34])
 
         self.logger.debug("updated state via model info")
         return True

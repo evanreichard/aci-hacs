@@ -20,8 +20,10 @@ async def async_setup_entry(
         AutoLowTemperature(coordinator),
         CycleOffTime(coordinator),
         CycleOnTime(coordinator),
+        OffSpeed(coordinator),
         OnSpeed(coordinator),
-        OffSpeed(coordinator)
+        TimerToOffTime(coordinator),
+        TimerToOnTime(coordinator)
     ])
 
 
@@ -81,7 +83,6 @@ class CycleOffTime(ACIEntity, NumberEntity):
     _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
-    _attr_native_max_value = 1000  # Max 2 Bytes in Seconds
 
     def __init__(self, coordinator: ACICoordinator):
         super().__init__(coordinator)
@@ -107,7 +108,6 @@ class CycleOnTime(ACIEntity, NumberEntity):
     _attr_entity_category = EntityCategory.CONFIG
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
-    _attr_native_max_value = 1000  # Max 2 Bytes in Seconds
 
     def __init__(self, coordinator: ACICoordinator):
         super().__init__(coordinator)
@@ -171,3 +171,53 @@ class OffSpeed(ACIEntity, NumberEntity):
     @callback
     def _async_update_attrs(self) -> None:
         self._attr_native_value = self.coordinator.state.fan_speed_off
+
+
+class TimerToOnTime(ACIEntity, NumberEntity):
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_device_class = NumberDeviceClass.DURATION
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_mode = NumberMode.BOX
+    _attr_native_min_value = 0
+
+    def __init__(self, coordinator: ACICoordinator):
+        super().__init__(coordinator)
+        self._attr_name = "Timer to On"
+        self._attr_unique_id = f"{self.coordinator.state.id}_timer_to_on"
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.coordinator.bt.set_timer_to_on(int(value * 60))
+
+    @property
+    def available(self) -> bool:  # type: ignore
+        return self.coordinator.available
+
+    @callback
+    def _async_update_attrs(self) -> None:
+        if timer_to_on_time := self.coordinator.state.timer_to_on_time:
+            self._attr_native_value = timer_to_on_time / 60
+
+
+class TimerToOffTime(ACIEntity, NumberEntity):
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_device_class = NumberDeviceClass.DURATION
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_mode = NumberMode.BOX
+    _attr_native_min_value = 0
+
+    def __init__(self, coordinator: ACICoordinator):
+        super().__init__(coordinator)
+        self._attr_name = "Timer to Off"
+        self._attr_unique_id = f"{self.coordinator.state.id}_timer_to_off"
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.coordinator.bt.set_timer_to_off(int(value * 60))
+
+    @property
+    def available(self) -> bool:  # type: ignore
+        return self.coordinator.available
+
+    @callback
+    def _async_update_attrs(self) -> None:
+        if timer_to_off_time := self.coordinator.state.timer_to_off_time:
+            self._attr_native_value = timer_to_off_time / 60
