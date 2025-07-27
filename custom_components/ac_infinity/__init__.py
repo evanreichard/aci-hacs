@@ -12,7 +12,8 @@ from .device import ACIDeviceState
 from .coordinator import ACICoordinator
 
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.FAN, Platform.NUMBER, Platform.SWITCH]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.FAN,
+                             Platform.NUMBER, Platform.SWITCH, Platform.CLIMATE]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

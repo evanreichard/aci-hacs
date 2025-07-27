@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 from logging import Logger
 from typing import Callable
 
-from .state import ACIDeviceState, AutoState, CycleState
 from .models import DeviceMode, DeviceType, RampStatus
+from .state import ACIDeviceState, AutoState, CycleState
+from .utils import format_as_hex
 
 
 PACKET_HEAD = bytes([165, 0])
@@ -58,7 +59,7 @@ class Protocol:
 
     def set_auto(self, state: AutoState) -> Command:
         auto_on_state = (state.low_temp_on << 2) | (state.high_temp_on << 3)
-        return Command(CMD_TYPE_WRITE, [19, 7, auto_on_state, state.high_temp, state.high_temp, state.low_temp, state.low_temp])
+        return Command(CMD_TYPE_WRITE, [19, 7, auto_on_state, to_f(state.high_temp), round(state.high_temp), to_f(state.low_temp), round(state.low_temp)])
 
     def set_timer_to_on(self, timer_on: int):
         timer_on_bytes = list(struct.pack('>I', timer_on))
@@ -151,26 +152,28 @@ class Protocol:
         state.fan_speed = fan_speed
         state.temperature = temperature
 
-        self.logger.debug("updated state via advertisement")
+        self.logger.debug("updated state via advertisement: %s" % format_as_hex(data))
         return True
 
     def process_status(self, data: bytes, state: ACIDeviceState) -> bool:
         """
         IDX: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17
         HEX: 1E FF 02 09 03 0C 00 00 07 E4 00 00 00 00 27 10 00 32
-               ┌──────────────┬──────┴───┘                   │  ││
-               │     Temp     │ ┌────────────────────────────┘  ││
-               │07E4 = 20.20°C│ │ ┌─────────┬───────────────────┘│
-               └──────────────┘ │ │Fan Speed│ ┌──────────────────┴──────────────┐
-             ┌──────────────────┤ │ (0 - A) │ │            Device Mode          │
-             │Fan Ramping Status│ └─────────┘ │1 = off; 2 = on; 3 = auto temp   │
-             │(8 = up, 4 = down)│             │4 = timer to on; 5 = timer to off│
-             └──────────────────┘             │        6 = cycle on or off      │
-                                              └─────────────────────────────────┘
+                    ┌──────────┴───┐ └───┤ ┌─────────────────┴┐ ││
+                    │Is Farenheight│     │ │Fan Ramping Status│ ││
+                    │   8 = True   │     │ │(8 = up, 4 = down)│ │├─────────────────────────────────┐
+                    └──────────────┘     │ └──────────────────┘ ││            Device Mode          │
+                                     ┌───┴──────────┐ ┌─────────┤│1 = off; 2 = on; 3 = auto temp   │
+                                     │     Temp     │ │Fan Speed││4 = timer to on; 5 = timer to off│
+                                     │07E4 = 20.20°C│ │ (0 - A) ││        6 = cycle on or off      │
+                                     └──────────────┘ └─────────┘└─────────────────────────────────┘
         """
         if len(data) != 18:
             self.logger.warning("invalid data length for status data: %s", len(data))
             return False
+
+        # Get Farenheight
+        state.is_farenheight = not bool(data[6] & (1 << 7))
 
         # Temperature (Bytes 8-9, Big Endian)
         temp_raw = int.from_bytes(data[8:10], 'big')
@@ -191,7 +194,7 @@ class Protocol:
         except ValueError:
             state.mode = DeviceMode.OFF
 
-        self.logger.debug("updated state via status")
+        self.logger.debug("updated state via status: %s" % format_as_hex(data))
         return True
 
 
@@ -222,3 +225,7 @@ def crc16(d, i, n):
 def add_int16(d, i, j):
     d[i] = (j >> 8) & 0xff
     d[i+1] = j & 0xff
+
+
+def to_f(celcius: float) -> int:
+    return round(celcius * 9 / 5 + 32)

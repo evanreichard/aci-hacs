@@ -4,6 +4,8 @@ Supports AirTap AC Infinity Bluetooth based registers
 
 ## Features
 
+- Climate Control
+- Fan Control
 - Temperature Sensor
 - Set Mode (On, Off, Auto, Timer to On, Timer to Off, Cycle)
 - Set Fan On / Off Speed (1 - 10)

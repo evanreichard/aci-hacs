@@ -24,8 +24,8 @@ class ACICoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.bt = ACIBluetoothDevice(
             device=device,
             state=state,
-            on_state_change=self.async_update_listeners,
             logger=logger,
+            on_state_update=self.async_update_listeners,
         )
 
         super().__init__(

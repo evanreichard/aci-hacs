@@ -41,7 +41,7 @@ class AutoHighTemperature(ACIEntity, NumberEntity):
         self._attr_unique_id = f"{self.coordinator.state.id}_auto_high_temp"
 
     async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.bt.set_auto_high_temp(int(value))
+        await self.coordinator.bt.set_auto_high_temp(value)
 
     @property
     def available(self) -> bool:  # type: ignore
@@ -66,7 +66,7 @@ class AutoLowTemperature(ACIEntity, NumberEntity):
         self._attr_unique_id = f"{self.coordinator.state.id}_auto_low_temp"
 
     async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.bt.set_auto_low_temp(int(value))
+        await self.coordinator.bt.set_auto_low_temp(value)
 
     @property
     def available(self) -> bool:  # type: ignore

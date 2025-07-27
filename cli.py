@@ -13,11 +13,11 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.widgets import Static, Input
 
-from custom_components.ac_infinity.client import format_as_hex
 from custom_components.ac_infinity.device import ACIBluetoothDevice
 from custom_components.ac_infinity.models import DeviceMode
 from custom_components.ac_infinity.protocol import CMD_TYPE_READ, CMD_TYPE_WRITE, Command
 from custom_components.ac_infinity.state import ACIDeviceState
+from custom_components.ac_infinity.utils import format_as_hex
 
 
 logging.basicConfig(
@@ -28,14 +28,20 @@ logging.basicConfig(
 
 
 class CLI:
-    def __init__(self, log_handler: Handler, update_callback: Callable[[], None]):
+    def __init__(
+            self,
+            log_handler: Handler,
+            on_state_update: Callable[[], None] | None = None,
+            on_status_update: Callable[[bytes], None] | None = None
+    ):
         self.device: ACIBluetoothDevice | None = None
         self.state = ACIDeviceState()
         self.scanner = BleakScanner(self.advertisement_callback)
         self.seq = 0
 
         self._log_handler = log_handler
-        self._update_callback = update_callback
+        self._on_state_update = on_state_update
+        self._on_status_update = on_status_update
 
     async def advertisement_callback(self, ble_device: BLEDevice, advertisement: AdvertisementData):
         # Get Manufacturer Data
@@ -45,8 +51,8 @@ class CLI:
 
         # Update State
         if self.device is not None:
-            if self.device.protocol.process_advertisement(data, self.state):
-                self._update_callback()
+            if self.device.protocol.process_advertisement(data, self.state) and self._on_state_update:
+                self._on_state_update()
             return
 
         # Create Logger
@@ -60,12 +66,12 @@ class CLI:
             device=ble_device,
             state=self.state,
             logger=logger,
-            on_state_change=self._update_callback,
+            on_state_update=self._on_state_update,
         )
 
         # Update State
-        if self.device.protocol.process_advertisement(data, self.state):
-            self._update_callback()
+        if self.device.protocol.process_advertisement(data, self.state) and self._on_state_update:
+            self._on_state_update()
         await self.device.client._ensure_connected()
 
     async def handle_command(self, command: str, cb: Callable[[str], None]):

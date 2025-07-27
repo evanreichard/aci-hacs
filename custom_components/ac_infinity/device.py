@@ -16,13 +16,15 @@ class ACIBluetoothDevice:
             device: BLEDevice,
             state: ACIDeviceState,
             logger: Logger | None,
-            on_state_change: Callable[[], None],
+            on_state_update: Callable[[], None] | None = None,
+            on_status_update: Callable[[bytes], None] | None = None
     ):
         self.logger = logger or logging.getLogger(__name__)
         self.protocol = Protocol(self.logger)
         self.client = Client(device, self._update_from_status_data, self.logger)
         self.state = state
-        self._on_state_change = on_state_change
+        self._on_state_update = on_state_update
+        self._on_status_update = on_status_update
 
     async def set_mode(self, mode: DeviceMode):
         await self._send_command_and_update(self.protocol.set_mode(mode))
@@ -62,14 +64,22 @@ class ACIBluetoothDevice:
         cycle_state.cycle_off_time = time
         await self._send_command_and_update(self.protocol.set_cycle(cycle_state))
 
-    async def set_auto_high_temp(self, temp: int):
+    async def set_auto_high_temp(self, temp: float):
         auto_state = await self._get_auto_state()
         if auto_state is None:
             return
         auto_state.high_temp = temp
         await self._send_command_and_update(self.protocol.set_auto(auto_state))
 
-    async def set_auto_low_temp(self, temp: int):
+    async def set_auto_temp(self, low_temp: float, high_temp: float):
+        auto_state = await self._get_auto_state()
+        if auto_state is None:
+            return
+        auto_state.high_temp = high_temp
+        auto_state.low_temp = low_temp
+        await self._send_command_and_update(self.protocol.set_auto(auto_state))
+
+    async def set_auto_low_temp(self, temp: float):
         auto_state = await self._get_auto_state()
         if auto_state is None:
             return
@@ -115,13 +125,15 @@ class ACIBluetoothDevice:
 
     async def _send_command(self, cmd: Command):
         if resp := await self.client.send(cmd):
-            if cmd.handle_response(resp, self.state):
-                self._on_state_change()
+            if cmd.handle_response(resp, self.state) and self._on_state_update:
+                self._on_state_update()
 
     def _update_from_status_data(self, data: bytes) -> None:
-        if self.protocol.process_status(data, self.state):
-            self._on_state_change()
+        if self._on_status_update:
+            self._on_status_update(data)
+        if self.protocol.process_status(data, self.state) and self._on_state_update:
+            self._on_state_update()
 
     def _update_from_advertisement_data(self, data: bytes) -> None:
-        if self.protocol.process_advertisement(data, self.state):
-            self._on_state_change()
+        if self.protocol.process_advertisement(data, self.state) and self._on_state_update:
+            self._on_state_update()

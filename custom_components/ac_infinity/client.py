@@ -5,7 +5,8 @@ from typing import Callable
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from bleak.backends.device import BLEDevice
 
-from .protocol import Command, Protocol
+from .protocol import Command
+from .utils import format_as_hex
 
 DISCONNECT_TIMEOUT = 30
 RESPONSE_TIMEOUT = 5
@@ -128,8 +129,3 @@ class Client:
                 return
             await self._client.stop_notify(READ_NOTIFY_CHAR)
             await self._client.disconnect()
-
-
-def format_as_hex(data: bytes) -> str:
-    hex_data = data.hex().upper()
-    return ' '.join(hex_data[i:i+2]for i in range(0, len(hex_data), 2))
