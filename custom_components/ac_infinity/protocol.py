@@ -50,20 +50,15 @@ class Protocol:
     def set_mode(self, mode: DeviceMode) -> Command:
         return Command(CMD_TYPE_WRITE, [16, 1, mode.value])
 
-    def set_on_speed(self, speed: int) -> Command:
-        return Command(CMD_TYPE_WRITE, [18, 1, speed])
-
     def set_off_speed(self, speed: int) -> Command:
         return Command(CMD_TYPE_WRITE, [17, 1, speed])
+
+    def set_on_speed(self, speed: int) -> Command:
+        return Command(CMD_TYPE_WRITE, [18, 1, speed])
 
     def set_auto(self, state: AutoState) -> Command:
         auto_on_state = (state.low_temp_on << 2) | (state.high_temp_on << 3)
         return Command(CMD_TYPE_WRITE, [19, 7, auto_on_state, state.high_temp, state.high_temp, state.low_temp, state.low_temp])
-
-    def set_cycle(self, state: CycleState) -> Command:
-        cycle_on_bytes = list(struct.pack('>I', state.cycle_on_time))
-        cycle_off_bytes = list(struct.pack('>I', state.cycle_off_time))
-        return Command(CMD_TYPE_WRITE, [22, 8, *cycle_on_bytes, *cycle_off_bytes])
 
     def set_timer_to_on(self, timer_on: int):
         timer_on_bytes = list(struct.pack('>I', timer_on))
@@ -73,6 +68,11 @@ class Protocol:
         timer_off_bytes = list(struct.pack('>I', timer_off))
         return Command(CMD_TYPE_WRITE, [21, 4, *timer_off_bytes])
 
+    def set_cycle(self, state: CycleState) -> Command:
+        cycle_on_bytes = list(struct.pack('>I', state.cycle_on_time))
+        cycle_off_bytes = list(struct.pack('>I', state.cycle_off_time))
+        return Command(CMD_TYPE_WRITE, [22, 8, *cycle_on_bytes, *cycle_off_bytes])
+
     def get_model_data(self):
         return Command(CMD_TYPE_READ, [16, 17, 18, 19, 20, 21, 22, 23]).with_callback(self.process_model_data)
 
@@ -80,10 +80,10 @@ class Protocol:
         """
         IDX: 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53
         HEX: A5 13 00 2A 00 03 37 D5 00 01 10 01 01 11 01 02 12 01 08 13 07 00 09 74 86 0C 79 8C 14 04 00 00 01 2C 15 04 00 00 01 2C 16 08 00 00 01 2C 00 00 01 2C 17 00 C7 6D
-                                                  │       ├┘       ├┘       ├┘    ├┘    ├┘                   └─┬─┘             └─┬─┘             └─┬─┘       └─┬─┘
-                ┌─────────────────────────────────┤  ┌────┴────┐   │ ┌──────┴──┐  │ ┌───┴────┐           ┌─────┴─────┐     ┌─────┴──────┐     ┌────┴───┐  ┌────┴────┐
-                │            Device Mode          │  │Speed Off│   │ │ Auto On │  │ │Auto Low│           │Timer to On│     │Timer to Off│     │Cycle On│  │Cycle Off│
-                │1 = off; 2 = on; 3 = auto temp   │  └─────────┘   │ │H (Bit 3)│  │ └────────┘           └───────────┘     └────────────┘     └────────┘  └─────────┘
+                                                  │       ├┘       ├┘       ├┘    ├┘    ├┘                └───┬──┘          └───┬──┘          └───┬──┘    └───┬──┘
+                ┌─────────────────────────────────┤  ┌────┴────┐   │ ┌──────┴──┐  │ ┌───┴────┐          ┌─────┴─────┐     ┌─────┴──────┐     ┌────┴───┐  ┌────┴────┐
+                │            Device Mode          │  │Speed Off│   │ │ Auto On │  │ │Auto Low│          │Timer to On│     │Timer to Off│     │Cycle On│  │Cycle Off│
+                │1 = off; 2 = on; 3 = auto temp   │  └─────────┘   │ │H (Bit 3)│  │ └────────┘          └───────────┘     └────────────┘     └────────┘  └─────────┘
                 │4 = timer to on; 5 = timer to off│   ┌────────┬───┘ │L (Bit 2)│  ├─────────┐
                 │        6 = cycle on or off      │   │Speed On│     └─────────┘  │Auto High│
                 └─────────────────────────────────┘   └────────┘                  └─────────┘
@@ -99,16 +99,16 @@ class Protocol:
             pass
 
         # Update State
-        state.auto_high_temp = data[23]
-        state.auto_high_temp_on = bool(data[21] & (1 << 3))
-        state.auto_low_temp = data[25]
-        state.auto_low_temp_on = bool(data[21] & (1 << 2))
-        state.cycle_off_time = int.from_bytes(data[48:50])
-        state.cycle_on_time = int.from_bytes(data[44:46])
         state.fan_speed_off = data[15]
         state.fan_speed_on = data[18]
-        state.timer_to_off_time = int.from_bytes(data[38:40])
-        state.timer_to_on_time = int.from_bytes(data[32:34])
+        state.auto_high_temp_on = bool(data[21] & (1 << 3))
+        state.auto_low_temp_on = bool(data[21] & (1 << 2))
+        state.auto_high_temp = data[23]
+        state.auto_low_temp = data[25]
+        state.timer_to_on_time = int.from_bytes(data[31:34])
+        state.timer_to_off_time = int.from_bytes(data[37:40])
+        state.cycle_on_time = int.from_bytes(data[43:46])
+        state.cycle_off_time = int.from_bytes(data[47:50])
 
         self.logger.debug("updated state via model info")
         return True
